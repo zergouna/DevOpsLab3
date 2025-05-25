@@ -1,0 +1,17 @@
+- hosts: localhost
+  become: yes
+  tasks:
+    - name: Installer Cert-Manager
+      import_playbook: playbook_cert_manager.yml
+    - name: Installer Traefik
+      import_playbook: playbook_traefik.yml
+    - name: Installer Prometheus
+      import_playbook: playbook_prometheus.yml
+    - name: Installer Grafana
+      import_playbook: playbook_grafana.yml
+    - name: Installer Loki
+      import_playbook: playbook_loki.yml
+    - name: Installer Promtail
+      import_playbook: playbook_promtail.yml
+    - name: Déployer Whoami
+      import_playbook: playbook_whoami.yml

@@ -1,0 +1,11 @@
+- hosts: k8s_nodes
+  become: yes
+  tasks:
+    - name: Ajouter le repo Helm pour Promtail
+      shell: |
+        helm repo add grafana https://grafana.github.io/helm-charts
+        helm repo update
+
+    - name: Installer Promtail via Helm
+      shell: |
+        helm install promtail grafana/promtail --namespace logging --create-namespace

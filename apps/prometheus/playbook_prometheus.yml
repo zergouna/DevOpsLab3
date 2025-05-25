@@ -1,0 +1,11 @@
+- hosts: k8s_nodes
+  become: yes
+  tasks:
+    - name: Ajouter le repo Helm pour Prometheus
+      shell: |
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        helm repo update
+
+    - name: Installer Prometheus via Helm
+      shell: |
+        helm install prometheus prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace

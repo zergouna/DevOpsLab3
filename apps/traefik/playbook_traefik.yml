@@ -1,0 +1,11 @@
+- hosts: k8s_nodes
+  become: yes
+  tasks:
+    - name: Ajouter le repo Helm pour Traefik
+      shell: |
+        helm repo add traefik https://traefik.github.io/charts
+        helm repo update
+
+    - name: Installer Traefik via Helm
+      shell: |
+        helm install traefik traefik/traefik --namespace kube-system --create-namespace

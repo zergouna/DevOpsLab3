@@ -1,0 +1,27 @@
+- hosts: k8s_nodes
+  become: yes
+  tasks:
+    - name: Déployer Whoami
+      k8s:
+        kubeconfig: /path/to/kubeconfig.yaml
+        namespace: default
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: whoami
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: whoami
+            template:
+              metadata:
+                labels:
+                  app: whoami
+              spec:
+                containers:
+                  - name: whoami
+                    image: traefik/whoami
+                    ports:
+                      - containerPort: 80
