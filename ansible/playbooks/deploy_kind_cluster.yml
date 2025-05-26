@@ -2,8 +2,11 @@
 - name: Automatisation de l'infrastructure Kubernetes avec Kind
   hosts: localhost
   become: yes
+  vars:
+    project_dir: "/home/zergouna/Téléchargements/DevOpsLab3-main"  # Chemin absolu de votre projet
+    kubeconfig_path: "/root/.kube/kind-config-modern-infra"  # Chemin explicite pour KUBECONFIG
   tasks:
-    - name: Installer les prérequis (Docker, Kind, kubectl, Helm)
+    - name: Installer les prérequis (Docker, Kind, kubectl)
       ansible.builtin.apt:
         name:
           - docker.io
@@ -11,22 +14,23 @@
         state: present
         update_cache: yes
 
-    - name: Téléumor et installer Kind
+    - name: Télécharger et installer Kind
       ansible.builtin.get_url:
-        url: https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+        url: https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-arm64
         dest: /usr/local/bin/kind
         mode: '0755'
 
-    - name: Téléumor et installer kubectl
+    - name: Télécharger et installer kubectl
       ansible.builtin.get_url:
-        url: https://storage.googleapis.com/kubernetes-release/release/v1.28.0/bin/linux/amd64/kubectl
+        url: https://storage.googleapis.com/kubernetes-release/release/v1.28.0/bin/linux/arm64/kubectl
         dest: /usr/local/bin/kubectl
         mode: '0755'
 
-    - name: Téléumor et installer Helm
+    - name: Télécharger Helm
       ansible.builtin.get_url:
-        url: https://get.helm.sh/helm-v3.15.4-linux-amd64.tar.gz
+        url: https://get.helm.sh/helm-v3.15.4-linux-arm64.tar.gz
         dest: /tmp/helm.tar.gz
+        mode: '0644'
       register: helm_download
 
     - name: Extraire Helm
@@ -34,51 +38,82 @@
         src: /tmp/helm.tar.gz
         dest: /tmp
         remote_src: yes
-        creates: /usr/local/bin/helm
       when: helm_download.changed
 
     - name: Installer Helm
       ansible.builtin.copy:
-        src: /tmp/linux-amd64/helm
+        src: /tmp/linux-arm64/helm
         dest: /usr/local/bin/helm
         mode: '0755'
+        owner: root
+        group: root
       when: helm_download.changed
+
+    - name: Vérifier l'installation de Helm
+      ansible.builtin.command: /usr/local/bin/helm version
+      changed_when: false
+      register: helm_version
+      failed_when: helm_version.rc != 0
 
     - name: Ajouter les dépôts Helm
       ansible.builtin.command: "{{ item }}"
       loop:
-        - helm repo add traefik https://helm.traefik.io/traefik
-        - helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-        - helm repo add argo https://argoproj.github.io/argo-helm
-        - helm repo update
+        - /usr/local/bin/helm repo add traefik https://helm.traefik.io/traefik
+        - /usr/local/bin/helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        - /usr/local/bin/helm repo add argo https://argoproj.github.io/argo-helm
+        - /usr/local/bin/helm repo update
       changed_when: false
+      environment:
+        PATH: "{{ ansible_env.PATH }}:/usr/local/bin"
+
+    - name: Vérifier l'existence du fichier kind-config.yaml
+      ansible.builtin.stat:
+        path: "{{ project_dir }}/kubernetes/kind-config.yaml"
+      register: kind_config
+      failed_when: not kind_config.stat.exists
 
     - name: Créer un cluster Kind
-      ansible.builtin.command: kind create cluster --name modern-infra --config kubernetes/kind-config.yaml
+      ansible.builtin.command: kind create cluster --name modern-infra --config "{{ project_dir }}/kubernetes/kind-config.yaml" --kubeconfig "{{ kubeconfig_path }}"
       args:
-        creates: ~/.kube/kind-config-modern-infra
+        creates: "{{ kubeconfig_path }}"
+      environment:
+        PATH: "{{ ansible_env.PATH }}:/usr/local/bin"
+
+    - name: Vérifier l'existence du fichier KUBECONFIG
+      ansible.builtin.stat:
+        path: "{{ kubeconfig_path }}"
+      register: kubeconfig_file
+      failed_when: not kubeconfig_file.stat.exists
+
+    - name: Vérifier l'accès au cluster Kubernetes
+      ansible.builtin.command: kubectl cluster-info
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      changed_when: false
+      register: cluster_info
+      failed_when: cluster_info.rc != 0
 
     - name: Déployer Traefik via Helm
-      ansible.builtin.command: helm install traefik traefik/traefik --namespace traefik --create-namespace --values helm/traefik-values.yaml
+      ansible.builtin.command: /usr/local/bin/helm install traefik traefik/traefik --namespace traefik --create-namespace --values "{{ project_dir }}/helm/traefik-values.yaml"
       environment:
-        KUBECONFIG: ~/.kube/kind-config-modern-infra
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: Déployer Whoami
-      ansible.builtin.command: kubectl apply -f kubernetes/manifests/whoami-deployment.yaml
+      ansible.builtin.command: kubectl apply -f "{{ project_dir }}/kubernetes/manifests/whoami-deployment.yaml"
       environment:
-        KUBECONFIG: ~/.kube/kind-config-modern-infra
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: Déployer Prometheus et Grafana via Helm
-      ansible.builtin.command: helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace --values helm/prometheus-values.yaml
+      ansible.builtin.command: /usr/local/bin/helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace --values "{{ project_dir }}/helm/prometheus-values.yaml"
       environment:
-        KUBECONFIG: ~/.kube/kind-config-modern-infra
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: Déployer ArgoCD via Helm
-      ansible.builtin.command: helm install argocd argo/argo-cd --namespace argocd --create-namespace --values helm/argocd-values.yaml
+      ansible.builtin.command: /usr/local/bin/helm install argocd argo/argo-cd --namespace argocd --create-namespace --values "{{ project_dir }}/helm/argocd-values.yaml"
       environment:
-        KUBECONFIG: ~/.kube/kind-config-modern-infra
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: Déployer l'application ArgoCD pour synchroniser le dépôt Git
-      ansible.builtin.command: kubectl apply -f kubernetes/manifests/argocd-app.yaml
+      ansible.builtin.command: kubectl apply -f "{{ project_dir }}/kubernetes/manifests/argocd-app.yaml"
       environment:
-        KUBECONFIG: ~/.kube/kind-config-modern-infra
+        KUBECONFIG: "{{ kubeconfig_path }}"
