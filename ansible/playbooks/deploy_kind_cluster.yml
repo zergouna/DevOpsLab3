@@ -1,0 +1,84 @@
+---
+- name: Automatisation de l'infrastructure Kubernetes avec Kind
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Installer les prérequis (Docker, Kind, kubectl, Helm)
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - curl
+        state: present
+        update_cache: yes
+
+    - name: Téléumor et installer Kind
+      ansible.builtin.get_url:
+        url: https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+        dest: /usr/local/bin/kind
+        mode: '0755'
+
+    - name: Téléumor et installer kubectl
+      ansible.builtin.get_url:
+        url: https://storage.googleapis.com/kubernetes-release/release/v1.28.0/bin/linux/amd64/kubectl
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+
+    - name: Téléumor et installer Helm
+      ansible.builtin.get_url:
+        url: https://get.helm.sh/helm-v3.15.4-linux-amd64.tar.gz
+        dest: /tmp/helm.tar.gz
+      register: helm_download
+
+    - name: Extraire Helm
+      ansible.builtin.unarchive:
+        src: /tmp/helm.tar.gz
+        dest: /tmp
+        remote_src: yes
+        creates: /usr/local/bin/helm
+      when: helm_download.changed
+
+    - name: Installer Helm
+      ansible.builtin.copy:
+        src: /tmp/linux-amd64/helm
+        dest: /usr/local/bin/helm
+        mode: '0755'
+      when: helm_download.changed
+
+    - name: Ajouter les dépôts Helm
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - helm repo add traefik https://helm.traefik.io/traefik
+        - helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        - helm repo add argo https://argoproj.github.io/argo-helm
+        - helm repo update
+      changed_when: false
+
+    - name: Créer un cluster Kind
+      ansible.builtin.command: kind create cluster --name modern-infra --config kubernetes/kind-config.yaml
+      args:
+        creates: ~/.kube/kind-config-modern-infra
+
+    - name: Déployer Traefik via Helm
+      ansible.builtin.command: helm install traefik traefik/traefik --namespace traefik --create-namespace --values helm/traefik-values.yaml
+      environment:
+        KUBECONFIG: ~/.kube/kind-config-modern-infra
+
+    - name: Déployer Whoami
+      ansible.builtin.command: kubectl apply -f kubernetes/manifests/whoami-deployment.yaml
+      environment:
+        KUBECONFIG: ~/.kube/kind-config-modern-infra
+
+    - name: Déployer Prometheus et Grafana via Helm
+      ansible.builtin.command: helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace --values helm/prometheus-values.yaml
+      environment:
+        KUBECONFIG: ~/.kube/kind-config-modern-infra
+
+    - name: Déployer ArgoCD via Helm
+      ansible.builtin.command: helm install argocd argo/argo-cd --namespace argocd --create-namespace --values helm/argocd-values.yaml
+      environment:
+        KUBECONFIG: ~/.kube/kind-config-modern-infra
+
+    - name: Déployer l'application ArgoCD pour synchroniser le dépôt Git
+      ansible.builtin.command: kubectl apply -f kubernetes/manifests/argocd-app.yaml
+      environment:
+        KUBECONFIG: ~/.kube/kind-config-modern-infra

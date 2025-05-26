@@ -1,0 +1,9 @@
+grafana:
+  adminPassword: admin
+  ingress:
+    enabled: true
+    hosts:
+      - grafana.local
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
